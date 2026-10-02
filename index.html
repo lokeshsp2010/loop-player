@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Loop – a music player that repeats what you love</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<meta name="theme-color" content="#2a0f14">
+<style>
+:root{--bg:#2a0f14;--panel:#3a171d;--ink:#f6e9dc;--mut:#c4a99a;--gold:#e8b04a;--line:#5a2a31}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+main{max-width:560px;margin:0 auto}
+h1{font:700 2rem Georgia,serif;margin:8px 0 20px;letter-spacing:.01em}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:1px solid var(--line);border-radius:999px;padding:8px 16px}
+button:hover{border-color:var(--gold)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.stage{background:var(--panel);border-radius:28px;padding:24px;text-align:center}
+.ring{position:relative;width:220px;height:220px;margin:0 auto 16px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:8}
+#track{stroke:var(--line)}#prog{stroke:var(--gold);stroke-linecap:round;stroke-dasharray:565.5;stroke-dashoffset:565.5}
+#play{position:absolute;inset:50px;border-radius:50%;background:var(--gold);color:#2a0f14;border:0;font-size:2rem}
+#title{font:700 1.25rem Georgia,serif;margin:0}#artist{color:var(--mut);margin:2px 0 12px}
+#seek{width:100%;accent-color:var(--gold)}
+.time{display:flex;justify-content:space-between;color:var(--mut);font-size:.85rem}
+.ctl{display:flex;gap:10px;justify-content:center;margin-top:12px}
+#ytbox{aspect-ratio:16/9;min-width:200px;min-height:200px;margin-bottom:16px}
+a{color:var(--gold)}footer{margin-top:32px}
+.add{margin:24px 0 8px;display:flex;gap:8px;flex-wrap:wrap}
+.add button[aria-selected=true]{background:var(--gold);color:#2a0f14;border-color:var(--gold)}
+.pane{display:flex;gap:8px;margin-bottom:8px}
+.pane input[type=text],.pane input[type=search]{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+#flt{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+#p-files,#p-jam{flex-wrap:wrap;align-items:center}#p-files label{color:var(--mut);font-size:.9rem}
+.note{color:var(--mut);font-size:.85rem;margin:4px 0 12px}
+ol{list-style:none;padding:0;margin:16px 0 0}
+li{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:12px;cursor:pointer}
+li:hover{background:var(--panel)}li.on{background:var(--panel);box-shadow:inset 3px 0 var(--gold)}
+li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li small{color:var(--mut)}
+@media (prefers-reduced-motion:no-preference){#prog{transition:stroke-dashoffset .5s linear}}
+</style>
+</head>
+<body>
+<main>
+<h1>Loop</h1>
+<section class="stage" aria-label="Now playing">
+  <div id="ytbox" hidden><div id="yt"></div></div>
+  <div class="ring">
+    <svg viewBox="0 0 200 200" aria-hidden="true"><circle id="track" cx="100" cy="100" r="90"/><circle id="prog" cx="100" cy="100" r="90"/></svg>
+    <button id="play" aria-label="Play or pause">▶</button>
+  </div>
+  <p id="title">Nothing playing</p><p id="artist">Add a song below</p>
+  <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+  <div class="time"><span id="t1">0:00</span><span id="t2">0:00</span></div>
+  <div class="ctl"><button id="prev" aria-label="Previous">⏮</button><button id="rep" aria-label="Repeat mode">Repeat: one song</button><button id="next" aria-label="Next">⏭</button></div>
+</section>
+
+<div class="add" role="tablist">
+  <button role="tab" data-p="yt" aria-selected="true">YouTube link</button>
+  <button role="tab" data-p="files" aria-selected="false">My files</button>
+  <button role="tab" data-p="jam" aria-selected="false">Search free music</button>
+</div>
+<div class="pane" id="p-yt"><input id="ytin" type="text" placeholder="Paste a YouTube song link"><button id="ytadd">Add song</button></div>
+<div class="pane" id="p-files" hidden><label>Add folder <input id="fold" type="file" webkitdirectory multiple></label><label>Add songs <input id="fin" type="file" accept="audio/*" multiple></label><label><input id="keep" type="checkbox"> Keep a copy in this browser for offline use</label></div>
+<div class="pane" id="p-jam" hidden><input id="jid" type="text" placeholder="Your free Jamendo client ID" aria-label="Jamendo client ID"><input id="jin" type="search" placeholder="Search songs on Jamendo"><button id="jgo">Search</button></div>
+<p class="note" id="note">Use the official upload of the song. Songs repeat one by one until you change the repeat mode.</p>
+<input id="flt" type="search" placeholder="Filter your queue by song name" aria-label="Filter queue">
+<ol id="list"></ol>
+<footer class="note">YouTube videos play in YouTube's own embedded player and are covered by the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a> and the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>. Free music comes from Jamendo under Creative Commons licences. Loop is not affiliated with YouTube or Jamendo. <a href="privacy.html">Privacy</a></footer>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const audio = new Audio();
+let q = [], i = -1, yt = null, repeat = localStorage.getItem("rep") || "one";
+const RLAB = {one:"Repeat: one song", all:"Repeat: all songs", off:"Repeat: off"};
+const fmt = s => isFinite(s) ? Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0") : "0:00";
+const cur = () => q[i];
+const isYT = () => cur() && cur().type === "yt";
+
+try { q = JSON.parse(localStorage.getItem("q") || "[]"); } catch(e) {}
+function save(){ try{ localStorage.setItem("q", JSON.stringify(q.filter(t=>t.type!=="file"))); }catch(e){} }
+
+function render(){
+  $("#list").innerHTML = q.length ? "" : "";
+  q.forEach((t,n)=>{
+    const li = document.createElement("li"); if(n===i) li.className="on";
+    const f = $("#flt").value.toLowerCase(); if(f && !(t.title+(t.artist||"")).toLowerCase().includes(f)) li.style.display = "none";
+    li.innerHTML = `<span>${esc(t.title)} <small>${esc(t.artist||"")}</small>${cred(t)}</span><button aria-label="Remove">✕</button>`;
+    li.onclick = e => { if(e.target.tagName==="BUTTON"){ const d = q[n].dbId; if(d!==undefined) store("readwrite").then(s=>s&&s.delete(d)); q.splice(n,1); if(n<i) i--; else if(n===i){ i=-1; audio.pause(); } save(); render(); } else go(n); };
+    $("#list").appendChild(li);
+  });
+  $("#rep").textContent = RLAB[repeat];
+}
+const cred = t => t.type!=="jam" ? "" : ` <small><a href="${esc(t.link||"https://www.jamendo.com")}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Jamendo</a>${t.lic?` <a href="${esc(t.lic)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">CC license</a>`:""}</small>`;
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function ensureYT(cb){
+  if(yt) return cb();
+  const s = document.createElement("script"); s.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(s);
+  window.onYouTubeIframeAPIReady = () => { yt = new YT.Player("yt",{width:"100%",height:"100%",playerVars:{playsinline:1},
+    events:{onReady:cb, onStateChange:e=>{ if(e.data===0) ended(); icon(); }}}); };
+}
+function go(n){
+  if(!q[n]) return; i = n; const t = q[n];
+  $("#title").textContent = t.title; $("#artist").textContent = t.artist || "";
+  if(t.type==="yt"){ audio.pause(); $("#ytbox").hidden = false; window.scrollTo({top:0}); ensureYT(()=>{ if(repeat==="one"){ yt.loadPlaylist([t.id],0,0); yt.setLoop(true); } else { yt.setLoop(false); yt.loadVideoById(t.id); } }); }
+  else { if(yt && yt.pauseVideo) yt.pauseVideo(); $("#ytbox").hidden = true; audio.src = t.src; audio.play(); }
+  if("mediaSession" in navigator) navigator.mediaSession.metadata = t.type==="yt" ? null : new MediaMetadata({title:t.title, artist:t.artist||"", artwork: t.art?[{src:t.art}]:[]});
+  render();
+}
+function add(t){ q.push(t); save(); render(); if(i<0) go(q.length-1); }
+function replay(){ if(isYT()){ yt.seekTo(0); yt.playVideo(); } else { audio.currentTime = 0; audio.play(); } }
+function next(auto){
+  if(!q.length) return; let n = i+1;
+  if(n>=q.length){ if(auto && repeat==="off") return; n = 0; }
+  go(n);
+}
+function ended(){ if(isYT() && (document.hidden || !ytSeen)) return; repeat==="one" ? replay() : next(true); }
+audio.onended = ended; audio.onplay = audio.onpause = () => icon();
+function playing(){ return isYT() ? (yt && yt.getPlayerState && yt.getPlayerState()===1) : !audio.paused; }
+function icon(){ $("#play").textContent = playing() ? "❚❚" : "▶"; }
+$("#play").onclick = () => { if(i<0 && q.length) return go(0); if(isYT()) playing()?yt.pauseVideo():yt.playVideo(); else playing()?audio.pause():audio.play(); };
+$("#next").onclick = () => next(false);
+$("#prev").onclick = () => { const t = isYT()&&yt.getCurrentTime ? yt.getCurrentTime() : audio.currentTime; if(t>3) replay(); else go((i-1+q.length)%q.length); };
+$("#rep").onclick = () => { repeat = {one:"all",all:"off",off:"one"}[repeat]; localStorage.setItem("rep",repeat); if(isYT() && yt.setLoop) yt.setLoop(repeat==="one"); render(); };
+$("#seek").oninput = e => { const d = isYT()?yt.getDuration():audio.duration; if(!d) return; const t = d*e.target.value/1000; isYT()?yt.seekTo(t,true):audio.currentTime = t; };
+setInterval(()=>{
+  const ok = isYT() ? yt && yt.getDuration : true; if(!ok || i<0) return;
+  const c = isYT()?yt.getCurrentTime():audio.currentTime, d = isYT()?yt.getDuration():audio.duration;
+  if(!d||!isFinite(d)) return;
+  $("#seek").value = c/d*1000; $("#t1").textContent = fmt(c); $("#t2").textContent = fmt(d);
+  $("#prog").style.strokeDashoffset = 565.5*(1-c/d);
+},500);
+let ytSeen = true;
+function pauseYT(){ if(isYT() && yt && yt.pauseVideo && playing()){ yt.pauseVideo(); $("#note").textContent = "Paused: YouTube videos only play while their player is visible on screen."; } }
+new IntersectionObserver(es => { ytSeen = es[0].intersectionRatio > 0.5; if(!ytSeen) pauseYT(); }, {threshold:[0,0.5,1]}).observe($("#ytbox"));
+document.addEventListener("visibilitychange", () => { if(document.hidden) pauseYT(); });
+if("mediaSession" in navigator){ const m = navigator.mediaSession; m.setActionHandler("nexttrack",()=>next(false)); m.setActionHandler("previoustrack",()=>$("#prev").click()); }
+
+document.querySelectorAll("[role=tab]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[role=tab]").forEach(x => x.setAttribute("aria-selected", x===b));
+  ["yt","files","jam"].forEach(p => $("#p-"+p).hidden = p!==b.dataset.p);
+  $("#note").textContent = {yt:"Use the official upload of the song. Videos play only while their player is visible on screen.", files:"Songs you own play from your device and work offline. Nothing is uploaded.", jam:"Free, legal music from independent artists on Jamendo."}[b.dataset.p];
+});
+$("#ytadd").onclick = () => {
+  const m = $("#ytin").value.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);
+  if(!m) return $("#note").textContent = "That doesn't look like a YouTube video link. Copy it from the Share button.";
+  add({type:"yt", id:m[1], title:"YouTube video ("+m[1]+")", artist:""}); $("#ytin").value = "";
+  ensureYT(()=>{}); 
+};
+const AUD = /\.(mp3|m4a|aac|flac|ogg|opus|wav|wma)$/i;
+const idb = new Promise(r => { try { const o = indexedDB.open("loop",1); o.onupgradeneeded = () => o.result.createObjectStore("songs",{autoIncrement:true}); o.onsuccess = () => r(o.result); o.onerror = () => r(null); } catch(e){ r(null); } });
+const store = async m => { const d = await idb; return d && d.transaction("songs",m).objectStore("songs"); };
+const nameOf = n => n.replace(/\.[^.]+$/,"");
+async function addFiles(files){
+  const list = [...files].filter(f => f.type.startsWith("audio/") || AUD.test(f.name));
+  if(!list.length) return $("#note").textContent = "No audio files found in that selection.";
+  const first = q.length, keep = $("#keep").checked;
+  if(keep && navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  for(const f of list){
+    const t = {type:"file", src:URL.createObjectURL(f), title:nameOf(f.name), artist:"My file"};
+    if(keep){ const s = await store("readwrite"); if(s) s.add({name:f.name, blob:f}).onsuccess = e => t.dbId = e.target.result; }
+    q.push(t);
+  }
+  render(); if(i<0) go(first);
+  $("#note").textContent = list.length + " songs added" + (keep ? " and saved for offline use." : ".");
+}
+$("#fin").onchange = e => addFiles(e.target.files);
+$("#fold").onchange = e => addFiles(e.target.files);
+$("#flt").oninput = render;
+(async () => { const s = await store("readonly"); if(!s) return;
+  s.openCursor().onsuccess = e => { const c = e.target.result; if(!c){ render(); return; }
+    q.push({type:"file", dbId:c.key, src:URL.createObjectURL(c.value.blob), title:nameOf(c.value.name), artist:"Saved offline"}); c.continue(); }; })();
+async function jam(){
+  const id = $("#jid").value.trim();
+  if(!id) return $("#note").textContent = "Paste your own free Jamendo client ID first. Get one at devportal.jamendo.com.";
+  try { localStorage.setItem("jid", id); } catch(e) {}
+  try {
+    const r = await fetch(`https://api.jamendo.com/v3.0/tracks/?client_id=${encodeURIComponent(id)}&format=json&limit=10&audioformat=mp32&namesearch=${encodeURIComponent($("#jin").value)}`);
+    const d = await r.json();
+    if(!d.results || !d.results.length) return $("#note").textContent = "No songs found. Check your client ID or try another word.";
+    d.results.forEach(t => add({type:"jam", src:t.audio, title:t.name, artist:t.artist_name, art:t.image, link:t.shareurl, lic:t.license_ccurl}));
+  } catch(e) { $("#note").textContent = "Could not reach Jamendo. Check your internet connection."; }
+}
+$("#jgo").onclick = jam; $("#jin").onkeydown = e => e.key==="Enter" && jam();
+$("#ytin").onkeydown = e => e.key==="Enter" && $("#ytadd").click();
+try { $("#jid").value = localStorage.getItem("jid") || ""; } catch(e) {}
+render();
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
